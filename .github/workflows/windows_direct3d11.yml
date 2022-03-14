@@ -10,14 +10,53 @@ on:
 
 jobs:
   build:
-
-    runs-on: windows-latest
+    name: Build app
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v1
+
     - name: Get Submodules
       run: git submodule update --init --recursive
+
     - name: Get Node.js
       run: git clone https://github.com/armory3d/nodejs_bin.git --depth 1
-    - name: Compile
+
+    - name: Generate VS solution
       run: nodejs_bin/node.exe armorcore/make -g direct3d11
+
+    - name: Extract v8
+      run: 7z x armorcore\v8\libraries\win32\release\v8_monolith.7z -o"armorcore\v8\libraries\win32\release"
+
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1.1
+
+    - name: Build app for deploy
+      run: msbuild armorcore/build/ArmorPaint.sln /P:Configuration=Release
+
+    - name: Deploy
+      run: |
+        "copy armorcore\build\x64\Release\ArmorPaint.exe build\krom"
+        "7z a -r build\krom\ArmorPaint-$env:GITHUB_SHA.7z .\build\krom\*"
+
+    - name: Upload the installer as an artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ArmorPaint
+        path: build\krom\ArmorPaint-$env:GITHUB_SHA.7z
+        
+  deploy-google-drive:
+    needs: build
+    name: Deploy to Google Drive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: ArmorPaint
+          path: dist
+      - name: Upload to Google Drive
+        uses: satackey/action-google-drive@v1
+        with:
+          skicka-tokencache-json: ${{ secrets.SKICKA_TOKENCACHE_JSON }}
+          upload-from: dist
+          upload-to: FH2/ArmorPaint
